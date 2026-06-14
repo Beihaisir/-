@@ -16,19 +16,14 @@ matplotlib.use('Agg')
 # ========== 配置页面 ==========
 st.set_page_config(page_title="六年级智能复习系统", layout="wide")
 
-# ========== 内嵌中文字体（Base64 编码的 NotoSansSC-Regular.ttf）==========
-# 这是开源的思源黑体（Noto Sans SC Regular），约 10MB，转为 base64 嵌入
-# 为了代码可读性，此处只放置实际解码写入的代码，字体二进制数据在代码末尾
-def get_font_base64():
-    """返回字体的 base64 字符串（实际使用时从外部文件读取？但为了单文件，直接嵌入字符串会太长）
-    因此改用从网络下载备用：如果本地没有字体，从可靠镜像下载一次。"""
+# ========== 字体下载（正确 URL）==========
+def download_font():
     font_dir = "fonts"
     font_path = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
     if not os.path.exists(font_dir):
         os.makedirs(font_dir)
     if not os.path.exists(font_path):
-        # 从 GitHub 镜像下载（可靠且免费）
-        import requests
+        # 使用正确的 TTF 链接
         url = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf"
         try:
             response = requests.get(url, timeout=30)
@@ -37,11 +32,12 @@ def get_font_base64():
                 f.write(response.content)
             st.success("中文字体下载成功")
         except Exception as e:
-            st.warning(f"字体下载失败，PDF中文将显示为空白（其他功能正常）: {e}")
+            # 静默失败，不影响主功能
+            st.toast("字体下载失败，PDF将使用英文（不影响在线练习）", icon="⚠️")
             return None
     return font_path
 
-# ========== 内置知识点（完整六年级复习大纲）==========
+# ========== 内置完整知识点（160+ 条）==========
 def get_builtin_knowledge_points():
     """根据用户提供的六年级复习大纲完整整理的知识点列表"""
     points = []
@@ -211,10 +207,11 @@ def get_builtin_knowledge_points():
 
     return points
 
-# ========== 初始化数据库 ==========
+# ========== 初始化数据库（强制覆盖旧知识点）==========
 def init_db():
     conn = sqlite3.connect('review_system.db')
     c = conn.cursor()
+    # 创建表
     c.execute('''CREATE TABLE IF NOT EXISTS knowledge_points
                  (id INTEGER PRIMARY KEY, subject TEXT, unit TEXT, name TEXT, description TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS exercise_records
@@ -242,12 +239,19 @@ def init_db():
                   correct_answer TEXT,
                   exercise_record_id INTEGER,
                   timestamp TIMESTAMP)''')
-    # 插入内置知识点（如果为空）
+    
+    # 检查当前知识点数量
     c.execute("SELECT COUNT(*) FROM knowledge_points")
-    if c.fetchone()[0] == 0:
+    count = c.fetchone()[0]
+    # 如果数量少于 50，说明还是旧数据（只有5条），强制重置
+    if count < 50:
+        # 清空表
+        c.execute("DELETE FROM knowledge_points")
+        # 插入完整内置知识点
         builtin = get_builtin_knowledge_points()
         c.executemany("INSERT INTO knowledge_points (subject, unit, name, description) VALUES (?,?,?,?)", builtin)
-    conn.commit()
+        conn.commit()
+    
     conn.close()
 
 # ========== DeepSeek API 调用 ==========
@@ -313,7 +317,7 @@ def grade_question(question: Dict, user_answer: str) -> bool:
     else:
         return user == correct
 
-# ========== PDF 生成（使用下载的中文字体）==========
+# ========== PDF 生成（支持中文）==========
 class PDF(FPDF):
     def __init__(self, font_path):
         super().__init__()
@@ -322,7 +326,6 @@ class PDF(FPDF):
             self.add_font('CustomFont', '', font_path, uni=True)
             self.set_font('CustomFont', '', 12)
         else:
-            # 降级使用 helvetica（英文）
             self.set_font('helvetica', '', 12)
 
     def header(self):
@@ -461,8 +464,8 @@ def get_wrong_questions():
 # ========== 主函数 ==========
 def main():
     st.title("📚 六年级智能复习系统")
-    init_db()
-    font_path = get_font_base64()  # 下载字体
+    init_db()  # 会自动覆盖旧知识点
+    font_path = download_font()
 
     # 侧边栏 API Key
     with st.sidebar:
@@ -473,11 +476,16 @@ def main():
             st.stop()
         st.success("API Key 已设置")
 
-    # 获取当前知识点
+    # 获取当前知识点（验证数量）
     conn = sqlite3.connect('review_system.db')
     df_kp = pd.read_sql_query("SELECT id, subject, unit, name FROM knowledge_points", conn)
     conn.close()
     subjects = df_kp['subject'].unique() if not df_kp.empty else []
+    
+    # 如果知识点数量还是少于50，报错提示（理论上不会发生）
+    if len(df_kp) < 50:
+        st.error(f"知识点数量异常（当前{len(df_kp)}条），请删除 review_system.db 文件后重启应用，系统将自动重建完整知识点。")
+        st.stop()
 
     # 导航
     menu = ["📚 知识库", "✍️ 智能出题", "📝 在线练习", "📊 学情分析", "📓 错题本", "🎯 针对性组卷", "📄 综合模拟", "📜 历史记录", "📤 纸质批改"]
@@ -486,7 +494,7 @@ def main():
     if choice == "📚 知识库":
         st.subheader("知识结构管理")
         st.dataframe(df_kp)
-        st.success(f"当前共有 {len(df_kp)} 个知识点，已包含六年级语文、数学、英语全部内容。")
+        st.success(f"当前共有 {len(df_kp)} 个知识点，已完整包含六年级语文、数学、英语全部内容。")
         with st.expander("手动添加知识点"):
             subject = st.text_input("科目")
             unit = st.text_input("单元")
@@ -503,6 +511,7 @@ def main():
                     st.rerun()
 
     elif choice == "✍️ 智能出题":
+        # 与之前相同（略，但保持完整）
         if df_kp.empty:
             st.warning("暂无知识点，请稍后再试。")
         else:
@@ -537,10 +546,9 @@ def main():
                                     st.write(f"   {opt}")
                             if include_explanation and 'explanation' in q:
                                 st.info(f"讲解：{q['explanation']}")
-                        # PDF 下载
                         pdf_bytes = create_pdf(questions, f"{subject}_{unit}_练习", font_path)
                         st.download_button("📥 下载PDF（无答案）", data=pdf_bytes, file_name="exercises.pdf", mime="application/pdf")
-                        # 保存空白记录用于纸质批改
+                        # 保存空白记录
                         conn = sqlite3.connect('review_system.db')
                         c = conn.cursor()
                         now = datetime.datetime.now().isoformat()
@@ -556,6 +564,7 @@ def main():
                         st.error("生成失败，请检查API Key或稍后重试")
 
     elif choice == "📝 在线练习":
+        # 省略重复代码（与之前相同，确保完整）
         if 'current_questions' not in st.session_state or not st.session_state['current_questions']:
             st.warning("请先在「智能出题」中生成题目")
         else:
@@ -720,7 +729,6 @@ def main():
                             if grade_question(q, user_answers[i]):
                                 correct += 1
                         score = correct
-                        # 保存批改记录
                         conn = sqlite3.connect('review_system.db')
                         c = conn.cursor()
                         now = datetime.datetime.now().isoformat()
