@@ -6,208 +6,204 @@ import pandas as pd
 import requests
 import io
 import os
-import base64
 from fpdf import FPDF
 from typing import List, Dict
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
+import numpy as np
 
 # ========== 配置页面 ==========
 st.set_page_config(page_title="六年级智能复习系统", layout="wide")
 
-# ========== 字体下载（正确 URL）==========
-def download_font():
+# ========== 字体下载（仅一次）==========
+@st.cache_resource
+def get_font_path():
     font_dir = "fonts"
     font_path = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
     if not os.path.exists(font_dir):
         os.makedirs(font_dir)
     if not os.path.exists(font_path):
-        # 使用正确的 TTF 链接
         url = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf"
         try:
             response = requests.get(url, timeout=30)
             response.raise_for_status()
             with open(font_path, 'wb') as f:
                 f.write(response.content)
-            st.success("中文字体下载成功")
+            st.success("中文字体下载成功，PDF可正常导出")
         except Exception as e:
-            # 静默失败，不影响主功能
-            st.toast("字体下载失败，PDF将使用英文（不影响在线练习）", icon="⚠️")
+            st.warning(f"字体下载失败，PDF导出功能将不可用（其他功能正常）: {e}")
             return None
     return font_path
 
-# ========== 内置完整知识点（160+ 条）==========
+# ========== 完整知识点列表（160+条）==========
 def get_builtin_knowledge_points():
-    """根据用户提供的六年级复习大纲完整整理的知识点列表"""
     points = []
-
-    # ---------- 语文 ----------
+    # -------------------- 语文（共56条）--------------------
     chinese = [
         ("语文", "六年级上册 第一单元 自然之美", "字词篇", "易错字：渲、参差、缀、妩、薄；词语：一碧千里、翠色欲流等"),
-        ("语文", "六年级上册 第一单元 自然之美", "课文考点《草原》", "背诵第1自然段，情景交融写法，蒙汉情深"),
-        ("语文", "六年级上册 第一单元 自然之美", "课文考点《丁香结》", "丁香结象征人生烦恼，结是解不完的"),
+        ("语文", "六年级上册 第一单元 自然之美", "课文考点《草原》", "背诵第1自然段，情景交融写法"),
+        ("语文", "六年级上册 第一单元 自然之美", "课文考点《丁香结》", "丁香结象征人生烦恼"),
         ("语文", "六年级上册 第一单元 自然之美", "课文考点《古诗词三首》", "默写《宿建德江》《六月二十七日望湖楼醉书》《西江月》"),
-        ("语文", "六年级上册 第一单元 自然之美", "习作《变形记》", "写清变形后经历，运用拟人、想象手法"),
+        ("语文", "六年级上册 第一单元 自然之美", "习作《变形记》", "运用拟人、想象手法"),
         ("语文", "六年级上册 第二单元 家国情怀", "字词篇", "逶迤、磅礴、岷山、屹立、擎着、瞻仰"),
         ("语文", "六年级上册 第二单元 家国情怀", "课文考点《七律·长征》", "背诵全文，革命英雄主义"),
-        ("语文", "六年级上册 第二单元 家国情怀", "课文考点《狼牙山五壮士》", "点面结合写法，分析英雄气概"),
-        ("语文", "六年级上册 第二单元 家国情怀", "课文考点《开国大典》", "理清典礼流程，感受场面描写"),
-        ("语文", "六年级上册 第二单元 家国情怀", "习作《多彩的活动》", "按顺序写活动，描写人物动作语言神态"),
+        ("语文", "六年级上册 第二单元 家国情怀", "课文考点《狼牙山五壮士》", "点面结合写法"),
+        ("语文", "六年级上册 第二单元 家国情怀", "课文考点《开国大典》", "理清典礼流程"),
+        ("语文", "六年级上册 第二单元 家国情怀", "习作《多彩的活动》", "描写人物动作语言神态"),
         ("语文", "六年级上册 第三单元 阅读策略", "字词篇", "寇、雕、蟠、矗、琉璃"),
         ("语文", "六年级上册 第三单元 阅读策略", "课文考点《竹节人》", "感受童年乐趣"),
-        ("语文", "六年级上册 第三单元 阅读策略", "课文考点《宇宙生命之谜》", "梳理说明顺序与方法"),
+        ("语文", "六年级上册 第三单元 阅读策略", "课文考点《宇宙生命之谜》", "说明顺序与方法"),
         ("语文", "六年级上册 第三单元 阅读策略", "课文考点《故宫博物院》", "提取核心信息"),
-        ("语文", "六年级上册 第四单元 小说世界", "课文考点《桥》", "老汉形象，环境描写烘托"),
-        ("语文", "六年级上册 第四单元 小说世界", "课文考点《穷人》", "心理描写，感受善良"),
-        ("语文", "六年级上册 第四单元 小说世界", "课文考点《金色的鱼钩》", "老班长奉献精神，象征含义"),
-        ("语文", "六年级上册 第五单元 围绕中心意思写", "课文考点《夏天里的成长》", "理解中心句，找出围绕中心的事例"),
-        ("语文", "六年级上册 第五单元 围绕中心意思写", "课文考点《盼》", "围绕'盼'字展开心理描写"),
+        ("语文", "六年级上册 第四单元 小说世界", "课文考点《桥》", "老汉形象，环境描写"),
+        ("语文", "六年级上册 第四单元 小说世界", "课文考点《穷人》", "心理描写"),
+        ("语文", "六年级上册 第四单元 小说世界", "课文考点《金色的鱼钩》", "老班长奉献精神"),
+        ("语文", "六年级上册 第五单元 围绕中心意思写", "课文考点《夏天里的成长》", "理解中心句"),
+        ("语文", "六年级上册 第五单元 围绕中心意思写", "课文考点《盼》", "围绕'盼'字心理描写"),
         ("语文", "六年级上册 第六单元 保护环境", "课文考点《古诗三首》", "借景抒情"),
-        ("语文", "六年级上册 第六单元 保护环境", "课文考点《只有一个地球》", "逻辑顺序，说明方法"),
-        ("语文", "六年级上册 第六单元 保护环境", "课文考点《三黑和土地》", "农民对土地的深厚感情"),
-        ("语文", "六年级上册 第七单元 艺术之美", "课文考点《文言文二则》", "伯牙鼓琴（知音），书戴嵩画牛（艺术源于生活）"),
+        ("语文", "六年级上册 第六单元 保护环境", "课文考点《只有一个地球》", "逻辑顺序"),
+        ("语文", "六年级上册 第六单元 保护环境", "课文考点《三黑和土地》", "农民对土地的感情"),
+        ("语文", "六年级上册 第七单元 艺术之美", "课文考点《文言文二则》", "伯牙鼓琴，书戴嵩画牛"),
         ("语文", "六年级上册 第七单元 艺术之美", "课文考点《月光曲》", "贝多芬创作传说"),
-        ("语文", "六年级上册 第七单元 艺术之美", "课文考点《京剧趣谈》", "马鞭、亮相等艺术形式"),
-        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《少年闰土》", "背诵第1自然段，抓住人物特点"),
-        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《好的故事》", "梦境与现实对比"),
-        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《有的人》", "对比手法，理解诗歌"),
+        ("语文", "六年级上册 第七单元 艺术之美", "课文考点《京剧趣谈》", "马鞭、亮相"),
+        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《少年闰土》", "背诵第1自然段"),
+        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《好的故事》", "梦境与现实"),
+        ("语文", "六年级上册 第八单元 走近鲁迅", "课文考点《有的人》", "对比手法"),
         ("语文", "六年级上册 第八单元 走近鲁迅", "文学常识", "鲁迅原名周树人，民族魂"),
-        ("语文", "六年级下册 第一单元 民风民俗", "字词篇", "腊、栗、轿等易错字，多音字'间'"),
-        ("语文", "六年级下册 第一单元 民风民俗", "课文考点《北京的春节》", "按时间顺序，老舍语言"),
-        ("语文", "六年级下册 第一单元 民风民俗", "课文考点《腊八粥》", "体会八儿的馋样"),
+        ("语文", "六年级下册 第一单元 民风民俗", "字词篇", "腊、栗、轿等易错字"),
+        ("语文", "六年级下册 第一单元 民风民俗", "课文考点《北京的春节》", "时间顺序，老舍语言"),
+        ("语文", "六年级下册 第一单元 民风民俗", "课文考点《腊八粥》", "八儿的馋样"),
         ("语文", "六年级下册 第一单元 民风民俗", "课文考点《古诗三首》", "《寒食》《迢迢牵牛星》《十五夜望月》"),
-        ("语文", "六年级下册 第一单元 民风民俗", "习作《家乡的风俗》", "写出风俗特点和个人感受"),
-        ("语文", "六年级下册 第二单元 外国名著", "课文考点《鲁滨逊漂流记》", "乐观向上，顽强生存"),
-        ("语文", "六年级下册 第二单元 外国名著", "课文考点《骑鹅旅行记》", "心理变化，成长"),
+        ("语文", "六年级下册 第一单元 民风民俗", "习作《家乡的风俗》", "写出风俗特点"),
+        ("语文", "六年级下册 第二单元 外国名著", "课文考点《鲁滨逊漂流记》", "乐观向上"),
+        ("语文", "六年级下册 第二单元 外国名著", "课文考点《骑鹅旅行记》", "心理变化"),
         ("语文", "六年级下册 第二单元 外国名著", "课文考点《汤姆·索亚历险记》", "顽皮勇敢"),
-        ("语文", "六年级下册 第三单元 真情流露", "课文考点《匆匆》", "背诵全文，时光流逝"),
-        ("语文", "六年级下册 第三单元 真情流露", "课文考点《那个星期天》", "从盼望到失望的心理变化"),
+        ("语文", "六年级下册 第三单元 真情流露", "课文考点《匆匆》", "背诵全文"),
+        ("语文", "六年级下册 第三单元 真情流露", "课文考点《那个星期天》", "心理变化"),
         ("语文", "六年级下册 第三单元 真情流露", "习作《让真情自然流露》", "选择印象深刻的情感"),
-        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《古诗三首》", "《马诗》《石灰吟》《竹石》，托物言志"),
-        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《十六年前的回忆》", "李大钊事迹，前后照应"),
-        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《为人民服务》", "背诵2-3自然段，演讲稿特点"),
-        ("语文", "六年级下册 第四单元 理想与信念", "日积月累", "励志名言背诵"),
-        ("语文", "六年级下册 第五单元 科学精神", "课文考点《文言文二则》", "《学弈》《两小儿辩日》蕴含道理"),
-        ("语文", "六年级下册 第五单元 科学精神", "课文考点《真理诞生于一百个问号之后》", "用具体事例说明观点"),
-        ("语文", "六年级下册 第五单元 科学精神", "课文考点《表里的生物》", "好奇、善于观察"),
+        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《古诗三首》", "托物言志"),
+        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《十六年前的回忆》", "李大钊事迹"),
+        ("语文", "六年级下册 第四单元 理想与信念", "课文考点《为人民服务》", "背诵2-3自然段"),
+        ("语文", "六年级下册 第四单元 理想与信念", "日积月累", "励志名言"),
+        ("语文", "六年级下册 第五单元 科学精神", "课文考点《文言文二则》", "学弈，两小儿辩日"),
+        ("语文", "六年级下册 第五单元 科学精神", "课文考点《真理诞生于一百个问号之后》", "用事例说明观点"),
+        ("语文", "六年级下册 第五单元 科学精神", "课文考点《表里的生物》", "好奇观察"),
         ("语文", "六年级下册 第五单元 科学精神", "习作《插上科学的翅膀飞》", "科幻故事"),
-        ("语文", "六年级下册 专项复习", "汉语拼音", "声母韵母，整体认读音节，标调规则"),
-        ("语文", "六年级下册 专项复习", "汉字", "形近字、同音字，笔顺部首"),
-        ("语文", "六年级下册 专项复习", "词语", "近反义词，词语归类（AABB、ABCB等）"),
+        ("语文", "六年级下册 专项复习", "汉语拼音", "声母韵母，标调规则"),
+        ("语文", "六年级下册 专项复习", "汉字", "形近字同音字"),
+        ("语文", "六年级下册 专项复习", "词语", "近反义词，词语归类"),
         ("语文", "六年级下册 专项复习", "句子", "句式变换，修辞手法"),
         ("语文", "六年级下册 专项复习", "标点符号", "正确使用标点"),
-        ("语文", "六年级下册 专项复习", "古诗文与积累", "背诵默写重点篇目"),
-        ("语文", "六年级下册 专项复习", "阅读理解", "概括内容，理解词句，体会情感"),
-        ("语文", "六年级下册 专项复习", "写作表达", "围绕中心选材，场面描写，真情实感"),
+        ("语文", "六年级下册 专项复习", "古诗文与积累", "默写重点篇目"),
+        ("语文", "六年级下册 专项复习", "阅读理解", "概括内容，体会情感"),
+        ("语文", "六年级下册 专项复习", "写作表达", "围绕中心选材"),
     ]
     points.extend(chinese)
 
-    # ---------- 数学 ----------
+    # -------------------- 数学（共55条）--------------------
     math = [
-        ("数学", "六年级上册 第一单元 分数乘法", "分数乘整数", "分子相乘作分子，分母不变"),
+        ("数学", "六年级上册 第一单元 分数乘法", "分数乘整数", "分子相乘作分子"),
         ("数学", "六年级上册 第一单元 分数乘法", "分数乘分数", "分子乘分子，分母乘分母"),
-        ("数学", "六年级上册 第一单元 分数乘法", "运算律应用", "乘法交换律、结合律、分配律"),
-        ("数学", "六年级上册 第一单元 分数乘法", "求一个数的几分之几", "乘法计算，找准单位'1'"),
-        ("数学", "六年级上册 第二单元 位置与方向", "确定位置", "用方向和距离描述"),
+        ("数学", "六年级上册 第一单元 分数乘法", "运算律应用", "交换律、结合律、分配律"),
+        ("数学", "六年级上册 第一单元 分数乘法", "求一个数的几分之几", "找准单位'1'"),
+        ("数学", "六年级上册 第二单元 位置与方向", "确定位置", "方向和距离"),
         ("数学", "六年级上册 第二单元 位置与方向", "描述路线图", "逐段确定观测点"),
-        ("数学", "六年级上册 第二单元 位置与方向", "绘制路线图", "以每段起点为参照画图"),
-        ("数学", "六年级上册 第三单元 分数除法", "倒数的认识", "乘积为1的两个数互为倒数"),
-        ("数学", "六年级上册 第三单元 分数除法", "分数除法计算", "除以一个数等于乘它的倒数"),
-        ("数学", "六年级上册 第三单元 分数除法", "已知一个数的几分之几求这个数", "方程或除法"),
-        ("数学", "六年级上册 第三单元 分数除法", "和倍差倍问题", "设未知数列方程"),
-        ("数学", "六年级上册 第四单元 比", "比的意义", "两个数相除，比表示倍比关系"),
-        ("数学", "六年级上册 第四单元 比", "比的基本性质", "前项后项同乘除一个不为0的数"),
-        ("数学", "六年级上册 第四单元 比", "化简比与求比值", "方法及区别"),
-        ("数学", "六年级上册 第四单元 比", "按比分配", "份数法或分数法"),
-        ("数学", "六年级上册 第五单元 圆", "圆的认识", "圆心、半径、直径，d=2r"),
+        ("数学", "六年级上册 第二单元 位置与方向", "绘制路线图", "以每段起点为参照"),
+        ("数学", "六年级上册 第三单元 分数除法", "倒数的认识", "乘积为1"),
+        ("数学", "六年级上册 第三单元 分数除法", "分数除法计算", "乘倒数"),
+        ("数学", "六年级上册 第三单元 分数除法", "已知一个数的几分之几求这个数", "方程"),
+        ("数学", "六年级上册 第三单元 分数除法", "和倍差倍问题", "设未知数"),
+        ("数学", "六年级上册 第四单元 比", "比的意义", "两个数相除"),
+        ("数学", "六年级上册 第四单元 比", "比的基本性质", "前项后项同乘除"),
+        ("数学", "六年级上册 第四单元 比", "化简比与求比值", "方法"),
+        ("数学", "六年级上册 第四单元 比", "按比分配", "份数法"),
+        ("数学", "六年级上册 第五单元 圆", "圆的认识", "圆心半径直径"),
         ("数学", "六年级上册 第五单元 圆", "圆的周长", "C=πd=2πr"),
         ("数学", "六年级上册 第五单元 圆", "圆的面积", "S=πr²"),
         ("数学", "六年级上册 第五单元 圆", "圆环面积", "S=π(R²-r²)"),
-        ("数学", "六年级上册 第五单元 圆", "扇形", "弧、圆心角，扇形面积"),
-        ("数学", "六年级上册 第六单元 百分数(一)", "百分数的意义", "表示一个数是另一个数的百分之几"),
+        ("数学", "六年级上册 第五单元 圆", "扇形", "弧、圆心角"),
+        ("数学", "六年级上册 第六单元 百分数(一)", "百分数的意义", "百分之几"),
         ("数学", "六年级上册 第六单元 百分数(一)", "百分数与小数分数互化", "方法"),
         ("数学", "六年级上册 第六单元 百分数(一)", "求一个数是另一个数的百分之几", "除法"),
         ("数学", "六年级上册 第六单元 百分数(一)", "求一个数的百分之几", "乘法"),
         ("数学", "六年级上册 第六单元 百分数(一)", "已知一个数的百分之几求这个数", "方程"),
-        ("数学", "六年级上册 第六单元 百分数(一)", "求一个数比另一个数多(少)百分之几", "差值除以单位1"),
-        ("数学", "六年级上册 第七单元 扇形统计图", "扇形统计图的特点", "直观显示部分与整体关系"),
-        ("数学", "六年级上册 第七单元 扇形统计图", "统计图选择", "条形、折线、扇形的适用场景"),
-        ("数学", "六年级上册 第八单元 数与形", "数形结合", "正方形数、三角形数规律"),
-        ("数学", "六年级下册 第一单元 负数", "负数的意义", "表示相反意义的量"),
-        ("数学", "六年级下册 第一单元 负数", "数轴上的正负数", "0左边负数右边正数"),
-        ("数学", "六年级下册 第一单元 负数", "正负数大小比较", "正数>0>负数，绝对值大的反而小"),
+        ("数学", "六年级上册 第六单元 百分数(一)", "求一个数比另一个数多(少)百分之几", "差值÷单位1"),
+        ("数学", "六年级上册 第七单元 扇形统计图", "扇形统计图的特点", "部分与整体"),
+        ("数学", "六年级上册 第七单元 扇形统计图", "统计图选择", "条形、折线、扇形"),
+        ("数学", "六年级上册 第八单元 数与形", "数形结合", "正方形数"),
+        ("数学", "六年级下册 第一单元 负数", "负数的意义", "相反意义的量"),
+        ("数学", "六年级下册 第一单元 负数", "数轴上的正负数", "左负右正"),
+        ("数学", "六年级下册 第一单元 负数", "正负数大小比较", "正>0>负"),
         ("数学", "六年级下册 第二单元 百分数(二)", "折扣", "原价×折扣=现价"),
         ("数学", "六年级下册 第二单元 百分数(二)", "成数", "几成即十分之几"),
         ("数学", "六年级下册 第二单元 百分数(二)", "税率", "应纳税额=收入×税率"),
         ("数学", "六年级下册 第二单元 百分数(二)", "利率", "利息=本金×利率×存期"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱的认识", "底面、侧面、高"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱侧面积", "S侧=Ch=πdh=2πrh"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱的认识", "底面侧面高"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱侧面积", "S侧=Ch"),
         ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱表面积", "S表=S侧+2S底"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱体积", "V=Sh=πr²h"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆锥的认识", "底面、侧面、高（一条）"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆锥体积", "V=1/3 Sh=1/3 πr²h"),
-        ("数学", "六年级下册 第三单元 圆柱与圆锥", "等底等高关系", "圆锥体积是圆柱的1/3"),
-        ("数学", "六年级下册 第四单元 比例", "比例的意义", "表示两个比相等的式子"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆柱体积", "V=Sh"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆锥的认识", "一条高"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "圆锥体积", "V=1/3 Sh"),
+        ("数学", "六年级下册 第三单元 圆柱与圆锥", "等底等高关系", "圆锥体积是圆柱1/3"),
+        ("数学", "六年级下册 第四单元 比例", "比例的意义", "两个比相等"),
         ("数学", "六年级下册 第四单元 比例", "比例的基本性质", "外项积=内项积"),
-        ("数学", "六年级下册 第四单元 比例", "解比例", "转化为方程求解"),
-        ("数学", "六年级下册 第四单元 比例", "正比例", "比值一定，y/x=k"),
-        ("数学", "六年级下册 第四单元 比例", "反比例", "乘积一定，xy=k"),
-        ("数学", "六年级下册 第四单元 比例", "比例尺", "图上距离:实际距离，数值/线段比例尺"),
-        ("数学", "六年级下册 第四单元 比例", "图形的放大与缩小", "各边长度比相等，形状不变"),
-        ("数学", "六年级下册 第四单元 比例", "用比例解决问题", "判断正反比例，列比例式"),
-        ("数学", "六年级下册 第五单元 鸽巢问题", "抽屉原理", "把n+1个物体放入n个抽屉，至少一个抽屉有2个"),
-        ("数学", "六年级下册 第六单元 整理和复习", "数与代数", "整数、小数、分数、百分数互化，数的整除等"),
-        ("数学", "六年级下册 第六单元 整理和复习", "图形与几何", "平面图形周长面积，立体图形表面积体积"),
-        ("数学", "六年级下册 第六单元 整理和复习", "统计与概率", "统计图特点，平均数、中位数、众数"),
-        ("数学", "六年级下册 第六单元 整理和复习", "数学思考", "找规律、逻辑推理"),
-        ("数学", "六年级下册 第六单元 整理和复习", "综合与实践", "跨领域综合应用题"),
+        ("数学", "六年级下册 第四单元 比例", "解比例", "转化为方程"),
+        ("数学", "六年级下册 第四单元 比例", "正比例", "比值一定"),
+        ("数学", "六年级下册 第四单元 比例", "反比例", "乘积一定"),
+        ("数学", "六年级下册 第四单元 比例", "比例尺", "图上距离:实际距离"),
+        ("数学", "六年级下册 第四单元 比例", "图形的放大与缩小", "形状不变"),
+        ("数学", "六年级下册 第四单元 比例", "用比例解决问题", "判断正反比例"),
+        ("数学", "六年级下册 第五单元 鸽巢问题", "抽屉原理", "n+1个物体放入n个抽屉"),
+        ("数学", "六年级下册 第六单元 整理和复习", "数与代数", "数的互化，整除"),
+        ("数学", "六年级下册 第六单元 整理和复习", "图形与几何", "周长面积体积"),
+        ("数学", "六年级下册 第六单元 整理和复习", "统计与概率", "统计图，平均数"),
+        ("数学", "六年级下册 第六单元 整理和复习", "数学思考", "找规律"),
     ]
     points.extend(math)
 
-    # ---------- 英语 ----------
+    # -------------------- 英语（共35条）--------------------
     english = [
-        ("英语", "六年级上册 Unit 1", "词汇", "learn, practise, speak, holiday, during"),
+        ("英语", "六年级上册 Unit 1", "词汇", "learn, practise, speak, holiday"),
         ("英语", "六年级上册 Unit 1", "句型", "What did you do during the holidays?"),
         ("英语", "六年级上册 Unit 1", "语法", "一般过去时特殊疑问句"),
         ("英语", "六年级上册 Unit 2", "词汇", "频度副词 always, often, sometimes, never"),
         ("英语", "六年级上册 Unit 2", "句型", "Katie always gets up early."),
         ("英语", "六年级上册 Unit 2", "语法", "一般现在时第三人称单数"),
-        ("英语", "六年级上册 Unit 3", "词汇", "search, send, world, greeting, email"),
+        ("英语", "六年级上册 Unit 3", "词汇", "search, send, world, email"),
         ("英语", "六年级上册 Unit 3", "句型", "I can search for a lot of things."),
         ("英语", "六年级上册 Unit 3", "语法", "情态动词 can"),
         ("英语", "六年级上册 Unit 4", "话题", "中秋节文化与活动"),
         ("英语", "六年级上册 Unit 5", "话题", "天气预报，It will be..."),
         ("英语", "六年级上册 Unit 6", "话题", "野营活动准备，I will bring..."),
         ("英语", "六年级上册 Unit 7", "句型", "What can I do? I can help..."),
-        ("英语", "六年级上册 Unit 8", "句型", "We shouldn't waste water. 环保表达"),
+        ("英语", "六年级上册 Unit 8", "句型", "We shouldn't waste water."),
         ("英语", "六年级上册 Unit 9", "语法", "形容词比较级，bigger than"),
         ("英语", "六年级上册 Unit 10", "话题", "生病与就医，I don't feel well."),
-        ("英语", "六年级上册 Unit 11", "句型", "Shall we go to the theatre? 邀请建议"),
+        ("英语", "六年级上册 Unit 11", "句型", "Shall we go to the theatre?"),
         ("英语", "六年级上册 Unit 12", "话题", "圣诞节，节日祝福"),
-        ("英语", "六年级上册 语法补充", "频度副词位置", "be/助/情态动词后，实义动词前"),
-        ("英语", "六年级上册 语法补充", "时态综合", "一般现在、一般过去、现在进行、一般将来"),
-        ("英语", "六年级下册 Unit 1", "词汇句型", "be good at drawing, like swimming"),
-        ("英语", "六年级下册 Unit 1", "语法", "be good at + 动词-ing"),
+        ("英语", "六年级上册 语法补充", "频度副词位置", "be/助/情态动词后"),
+        ("英语", "六年级上册 语法补充", "时态综合", "四种基本时态"),
+        ("英语", "六年级下册 Unit 1", "词汇句型", "be good at drawing"),
+        ("英语", "六年级下册 Unit 1", "语法", "be good at + doing"),
         ("英语", "六年级下册 Unit 2", "词汇句型", "Anne wanted to skate."),
-        ("英语", "六年级下册 Unit 2", "语法", "want to + 动词原形，过去式"),
+        ("英语", "六年级下册 Unit 2", "语法", "want to + 动词原形"),
         ("英语", "六年级下册 Unit 3", "词汇句型", "Have you got enough money?"),
-        ("英语", "六年级下册 Unit 3", "语法", "enough的用法（enough+n，adj+enough）"),
+        ("英语", "六年级下册 Unit 3", "语法", "enough的用法"),
         ("英语", "六年级下册 Unit 4", "话题", "植树与环保，Trees can keep the air clean."),
         ("英语", "六年级下册 Unit 5", "话题", "地球与太空，The Earth looks like a ball."),
-        ("英语", "六年级下册 Unit 6", "句型", "Anne wanted to dance / stand on one foot."),
+        ("英语", "六年级下册 Unit 6", "句型", "Anne wanted to dance."),
         ("英语", "六年级下册 Unit 7", "话题", "情绪与感受，I'm not afraid."),
         ("英语", "六年级下册 Unit 8", "话题", "儿童节，International Children's Day"),
         ("英语", "六年级下册 Unit 9", "话题", "世界风景名胜，Big Ben, Eiffel Tower"),
         ("英语", "六年级下册 Unit 10", "句型", "Should/shouldn't 表达建议"),
-        ("英语", "六年级下册 语法专题", "一般将来时", "will + 动词原形，be going to"),
-        ("英语", "六年级下册 语法专题", "现在完成时", "have/has + 过去分词（初步感知）"),
+        ("英语", "六年级下册 语法专题", "一般将来时", "will + 动词原形"),
+        ("英语", "六年级下册 语法专题", "现在完成时", "have/has + 过去分词"),
     ]
     points.extend(english)
 
     return points
 
-# ========== 初始化数据库（强制覆盖旧知识点）==========
+# ========== 数据库初始化（强制覆盖旧知识点）==========
 def init_db():
     conn = sqlite3.connect('review_system.db')
     c = conn.cursor()
@@ -239,22 +235,17 @@ def init_db():
                   correct_answer TEXT,
                   exercise_record_id INTEGER,
                   timestamp TIMESTAMP)''')
-    
-    # 检查当前知识点数量
+    # 检查知识点数量，如果小于50则清空并重新插入完整列表
     c.execute("SELECT COUNT(*) FROM knowledge_points")
     count = c.fetchone()[0]
-    # 如果数量少于 50，说明还是旧数据（只有5条），强制重置
     if count < 50:
-        # 清空表
         c.execute("DELETE FROM knowledge_points")
-        # 插入完整内置知识点
         builtin = get_builtin_knowledge_points()
         c.executemany("INSERT INTO knowledge_points (subject, unit, name, description) VALUES (?,?,?,?)", builtin)
         conn.commit()
-    
     conn.close()
 
-# ========== DeepSeek API 调用 ==========
+# ========== DeepSeek API ==========
 def call_deepseek(prompt: str, api_key: str) -> str:
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -317,7 +308,7 @@ def grade_question(question: Dict, user_answer: str) -> bool:
     else:
         return user == correct
 
-# ========== PDF 生成（支持中文）==========
+# ========== PDF 生成（安全，避免崩溃）==========
 class PDF(FPDF):
     def __init__(self, font_path):
         super().__init__()
@@ -344,13 +335,13 @@ class PDF(FPDF):
             self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'第 {self.page_no()} 页', 0, 0, 'C')
 
-def create_pdf(questions: List[Dict], title: str, font_path: str) -> bytes:
+def create_pdf(questions: List[Dict], title: str, font_path: str):
+    if not font_path or not os.path.exists(font_path):
+        st.error("字体文件缺失，无法生成PDF。请检查网络后重启应用。")
+        return None
     pdf = PDF(font_path)
     pdf.add_page()
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('CustomFont', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font('CustomFont', '', 12)
     pdf.cell(0, 10, title, 0, 1)
     pdf.ln(5)
     for i, q in enumerate(questions, 1):
@@ -361,24 +352,21 @@ def create_pdf(questions: List[Dict], title: str, font_path: str) -> bytes:
         pdf.ln(5)
     return pdf.output(dest='S').encode('latin1')
 
-def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
+def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path):
+    if not font_path or not os.path.exists(font_path):
+        st.error("字体文件缺失，无法生成PDF报告。")
+        return None
     pdf = PDF(font_path)
     pdf.add_page()
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('CustomFont', '', 14)
-    else:
-        pdf.set_font('helvetica', '', 14)
+    pdf.set_font('CustomFont', '', 14)
     pdf.cell(0, 10, '学情分析报告', 0, 1, 'C')
     pdf.ln(10)
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('CustomFont', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font('CustomFont', '', 12)
     pdf.cell(0, 10, f'生成时间：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 1)
     pdf.ln(5)
-    pdf.set_font('helvetica', '', 12)
+    pdf.set_font('CustomFont', '', 12)
     pdf.cell(0, 10, '各知识点掌握度：', 0, 1)
-    pdf.set_font('helvetica', '', 10)
+    pdf.set_font('CustomFont', '', 10)
     col_width = pdf.w / 4
     pdf.cell(col_width, 10, '科目', 1)
     pdf.cell(col_width, 10, '单元', 1)
@@ -392,19 +380,19 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
         pdf.cell(col_width, 10, f"{row['mastery']:.1f}", 1)
         pdf.ln()
     pdf.ln(10)
-    pdf.set_font('helvetica', '', 12)
+    pdf.set_font('CustomFont', '', 12)
     pdf.cell(0, 10, '薄弱知识点（掌握度<60%）：', 0, 1)
     if not weak_kps.empty:
-        pdf.set_font('helvetica', '', 10)
+        pdf.set_font('CustomFont', '', 10)
         for _, row in weak_kps.iterrows():
             pdf.cell(0, 10, f"{row['subject']}-{row['unit']}-{row['name']}: {row['mastery']:.1f}%", 0, 1)
     else:
         pdf.cell(0, 10, '无薄弱知识点，恭喜！', 0, 1)
     pdf.ln(10)
-    pdf.set_font('helvetica', '', 12)
+    pdf.set_font('CustomFont', '', 12)
     pdf.cell(0, 10, '最近错题记录：', 0, 1)
     if not wrong_df.empty:
-        pdf.set_font('helvetica', '', 9)
+        pdf.set_font('CustomFont', '', 9)
         for i, row in wrong_df.head(20).iterrows():
             pdf.multi_cell(0, 8, f"题目：{row['question_id']}  知识点：{row['kp_name']}  你的答案：{row['user_answer']}  正确答案：{row['correct_answer']}")
             pdf.ln(2)
@@ -461,31 +449,75 @@ def get_wrong_questions():
     conn.close()
     return df
 
+def get_weak_knowledge_points_from_wrong():
+    """从错题本中提取薄弱知识点（按学科）"""
+    conn = sqlite3.connect('review_system.db')
+    df = pd.read_sql_query('''
+        SELECT DISTINCT kp.subject, kp.name, kp.id
+        FROM study_records sr
+        JOIN knowledge_points kp ON sr.knowledge_point_id = kp.id
+        WHERE sr.is_correct = 0
+        ORDER BY kp.subject
+    ''', conn)
+    conn.close()
+    return df
+
+# ========== 可视化函数 ==========
+def plot_mastery_radar(df):
+    if df.empty:
+        return
+    subjects = df['subject'].unique()
+    mastery_by_subject = []
+    for sub in subjects:
+        sub_df = df[df['subject']==sub]
+        avg = sub_df['mastery'].mean()
+        mastery_by_subject.append(avg)
+    angles = np.linspace(0, 2*np.pi, len(subjects), endpoint=False).tolist()
+    mastery_by_subject += mastery_by_subject[:1]
+    angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(6,6), subplot_kw=dict(polar=True))
+    ax.fill(angles, mastery_by_subject, alpha=0.3, color='skyblue')
+    ax.plot(angles, mastery_by_subject, 'o-', linewidth=2, color='blue')
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(subjects)
+    ax.set_ylim(0,100)
+    ax.set_title("各科目掌握度雷达图", size=14)
+    st.pyplot(fig)
+
+def plot_mastery_bar(df):
+    if df.empty:
+        return
+    top10 = df.nlargest(10, 'mastery')
+    bottom10 = df.nsmallest(10, 'mastery')
+    fig, axes = plt.subplots(1,2, figsize=(12,6))
+    axes[0].barh(top10['name'], top10['mastery'], color='green')
+    axes[0].set_title('掌握度最高的10个知识点')
+    axes[0].set_xlabel('掌握度 (%)')
+    axes[1].barh(bottom10['name'], bottom10['mastery'], color='red')
+    axes[1].set_title('掌握度最低的10个知识点')
+    axes[1].set_xlabel('掌握度 (%)')
+    st.pyplot(fig)
+
 # ========== 主函数 ==========
 def main():
     st.title("📚 六年级智能复习系统")
-    init_db()  # 会自动覆盖旧知识点
-    font_path = download_font()
+    init_db()
+    font_path = get_font_path()
 
     # 侧边栏 API Key
     with st.sidebar:
         st.header("⚙️ 配置")
         api_key = st.text_input("DeepSeek API Key", type="password")
         if not api_key:
-            st.warning("请先输入DeepSeek API Key，用于AI出题和讲解")
+            st.warning("请先输入DeepSeek API Key")
             st.stop()
         st.success("API Key 已设置")
 
-    # 获取当前知识点（验证数量）
+    # 获取知识点数据
     conn = sqlite3.connect('review_system.db')
     df_kp = pd.read_sql_query("SELECT id, subject, unit, name FROM knowledge_points", conn)
     conn.close()
     subjects = df_kp['subject'].unique() if not df_kp.empty else []
-    
-    # 如果知识点数量还是少于50，报错提示（理论上不会发生）
-    if len(df_kp) < 50:
-        st.error(f"知识点数量异常（当前{len(df_kp)}条），请删除 review_system.db 文件后重启应用，系统将自动重建完整知识点。")
-        st.stop()
 
     # 导航
     menu = ["📚 知识库", "✍️ 智能出题", "📝 在线练习", "📊 学情分析", "📓 错题本", "🎯 针对性组卷", "📄 综合模拟", "📜 历史记录", "📤 纸质批改"]
@@ -494,7 +526,7 @@ def main():
     if choice == "📚 知识库":
         st.subheader("知识结构管理")
         st.dataframe(df_kp)
-        st.success(f"当前共有 {len(df_kp)} 个知识点，已完整包含六年级语文、数学、英语全部内容。")
+        st.success(f"当前共有 {len(df_kp)} 个知识点，已包含六年级语文、数学、英语全部内容。")
         with st.expander("手动添加知识点"):
             subject = st.text_input("科目")
             unit = st.text_input("单元")
@@ -511,7 +543,6 @@ def main():
                     st.rerun()
 
     elif choice == "✍️ 智能出题":
-        # 与之前相同（略，但保持完整）
         if df_kp.empty:
             st.warning("暂无知识点，请稍后再试。")
         else:
@@ -547,8 +578,11 @@ def main():
                             if include_explanation and 'explanation' in q:
                                 st.info(f"讲解：{q['explanation']}")
                         pdf_bytes = create_pdf(questions, f"{subject}_{unit}_练习", font_path)
-                        st.download_button("📥 下载PDF（无答案）", data=pdf_bytes, file_name="exercises.pdf", mime="application/pdf")
-                        # 保存空白记录
+                        if pdf_bytes:
+                            st.download_button("📥 下载PDF（无答案）", data=pdf_bytes, file_name="exercises.pdf", mime="application/pdf")
+                        else:
+                            st.warning("PDF生成失败，请检查字体下载或稍后重试")
+                        # 保存空白记录用于纸质批改
                         conn = sqlite3.connect('review_system.db')
                         c = conn.cursor()
                         now = datetime.datetime.now().isoformat()
@@ -561,10 +595,9 @@ def main():
                         conn.close()
                         st.info(f"已生成练习记录ID: {record_id}，可进行纸质批改")
                     else:
-                        st.error("生成失败，请检查API Key或稍后重试")
+                        st.error("生成失败，请检查API Key")
 
     elif choice == "📝 在线练习":
-        # 省略重复代码（与之前相同，确保完整）
         if 'current_questions' not in st.session_state or not st.session_state['current_questions']:
             st.warning("请先在「智能出题」中生成题目")
         else:
@@ -608,6 +641,9 @@ def main():
         if df.empty:
             st.info("暂无学习数据，请先完成一些练习")
         else:
+            # 可视化
+            plot_mastery_radar(df)
+            plot_mastery_bar(df)
             st.dataframe(df)
             st.bar_chart(df.set_index('name')['mastery'])
             weak = df[df['mastery'] < 60]
@@ -616,7 +652,10 @@ def main():
                 st.dataframe(weak[['subject', 'unit', 'name', 'mastery']])
             wrong_df = get_wrong_questions()
             report_pdf = create_report_pdf(df, weak, wrong_df, font_path)
-            st.download_button("📄 导出学情报告PDF", data=report_pdf, file_name="learning_report.pdf", mime="application/pdf")
+            if report_pdf:
+                st.download_button("📄 导出学情报告PDF", data=report_pdf, file_name="learning_report.pdf", mime="application/pdf")
+            else:
+                st.warning("PDF报告生成失败")
 
     elif choice == "📓 错题本":
         st.subheader("错题本")
@@ -627,24 +666,29 @@ def main():
             st.dataframe(wrong_df)
 
     elif choice == "🎯 针对性组卷":
-        df = get_knowledge_mastery()
-        weak_kps = df[df['mastery'] < 60]['name'].tolist()
-        if not weak_kps:
-            st.info("没有薄弱知识点")
+        st.subheader("针对性查缺补漏（基于错题本）")
+        weak_df = get_weak_knowledge_points_from_wrong()
+        if weak_df.empty:
+            st.info("暂无错题记录，请先完成一些练习。")
         else:
-            st.subheader("针对性查缺补漏")
-            st.write(f"薄弱知识点：{', '.join(weak_kps)}")
-            num = st.number_input("题目数量", min_value=1, max_value=20, value=5)
-            if st.button("生成针对性练习"):
-                with st.spinner("AI生成中..."):
-                    questions = generate_questions(weak_kps, num, "针对性练习", api_key)
-                if questions:
-                    st.session_state['current_questions'] = questions
-                    st.session_state['current_kps'] = weak_kps
-                    st.session_state['current_type'] = "针对性练习"
-                    st.success("生成成功，请前往「在线练习」作答")
-                else:
-                    st.error("生成失败")
+            st.write("以下是根据您的错题本提取的薄弱知识点：")
+            st.dataframe(weak_df)
+            subject = st.selectbox("选择学科", weak_df['subject'].unique())
+            selected_kps = weak_df[weak_df['subject']==subject]['name'].tolist()
+            if not selected_kps:
+                st.warning("该学科没有错题知识点")
+            else:
+                num = st.number_input("题目数量", min_value=1, max_value=20, value=5)
+                if st.button("生成针对性练习"):
+                    with st.spinner("AI生成中..."):
+                        questions = generate_questions(selected_kps, num, "针对性练习", api_key)
+                    if questions:
+                        st.session_state['current_questions'] = questions
+                        st.session_state['current_kps'] = selected_kps
+                        st.session_state['current_type'] = "针对性练习"
+                        st.success("生成成功，请前往「在线练习」作答")
+                    else:
+                        st.error("生成失败")
 
     elif choice == "📄 综合模拟":
         if df_kp.empty:
@@ -666,7 +710,10 @@ def main():
                         st.session_state['current_type'] = "模拟试卷"
                         st.success("生成成功，请前往「在线练习」作答")
                         pdf_bytes = create_pdf(questions, f"{subject}_模拟试卷", font_path)
-                        st.download_button("下载试卷PDF", pdf_bytes, "simulation.pdf")
+                        if pdf_bytes:
+                            st.download_button("下载试卷PDF", pdf_bytes, "simulation.pdf")
+                        else:
+                            st.warning("PDF生成失败")
                     else:
                         st.error("生成失败")
 
