@@ -24,7 +24,7 @@ def get_font_path():
     if not os.path.exists(font_dir):
         os.makedirs(font_dir)
     if not os.path.exists(font_path):
-        url = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf"
+        url = "https://github.com/notofonts/noto-cjk/raw/refs/heads/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
         try:
             response = requests.get(url, timeout=30)
             response.raise_for_status()
