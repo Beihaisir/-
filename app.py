@@ -13,39 +13,11 @@ from PIL import Image
 from typing import List, Dict, Any, Optional
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # 避免多线程问题
+matplotlib.use('Agg')
 import numpy as np
 
 # ========== 配置页面 ==========
 st.set_page_config(page_title="AI智能辅助复习系统", layout="wide")
-
-# ========== 下载中文字体（多备用地址）==========
-def download_font():
-    """从多个备用地址下载中文字体，避免单一链接失效"""
-    font_dir = "fonts"
-    font_path = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
-    if not os.path.exists(font_dir):
-        os.makedirs(font_dir)
-    if not os.path.exists(font_path):
-        with st.spinner("首次使用，正在下载中文字体（约20M，请稍等）..."):
-            urls = [
-                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf",
-                "https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf",
-                "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf"
-            ]
-            for url in urls:
-                try:
-                    response = requests.get(url, timeout=30)
-                    response.raise_for_status()
-                    with open(font_path, 'wb') as f:
-                        f.write(response.content)
-                    st.success("字体下载完成，PDF可正常显示中文")
-                    return font_path
-                except Exception as e:
-                    continue
-            st.error("所有字体下载链接均失败，PDF中文将显示为空白（其他功能正常）")
-            return None
-    return font_path
 
 # ========== 初始化数据库 ==========
 def init_db():
@@ -164,41 +136,27 @@ def grade_question(question: Dict, user_answer: str) -> bool:
     else:
         return user == correct
 
-# ========== PDF 生成（支持中文）==========
+# ========== PDF 生成（使用内置DejaVu字体支持中文）==========
 class PDF(FPDF):
-    def __init__(self, font_path):
+    def __init__(self):
         super().__init__()
-        self.font_path = font_path
-        if font_path and os.path.exists(font_path):
-            self.add_font('NotoSans', '', font_path, uni=True)
-            self.set_font('NotoSans', '', 12)
-        else:
-            # 降级使用内置字体（英文）
-            self.set_font('helvetica', '', 12)
+        # 使用 fpdf2 自带的 DejaVu 字体（支持中文）
+        self.set_font("DejaVu", "", 12)
 
     def header(self):
-        if hasattr(self, 'font_path') and self.font_path and os.path.exists(self.font_path):
-            self.set_font('NotoSans', '', 12)
-        else:
-            self.set_font('helvetica', '', 12)
+        self.set_font("DejaVu", "", 12)
         self.cell(0, 10, 'AI智能复习系统 - 练习题', 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
-        if hasattr(self, 'font_path') and self.font_path and os.path.exists(self.font_path):
-            self.set_font('NotoSans', '', 8)
-        else:
-            self.set_font('helvetica', '', 8)
+        self.set_font("DejaVu", "", 8)
         self.cell(0, 10, f'第 {self.page_no()} 页', 0, 0, 'C')
 
-def create_pdf(questions: List[Dict], title: str, font_path: str) -> bytes:
-    pdf = PDF(font_path)
+def create_pdf(questions: List[Dict], title: str) -> bytes:
+    pdf = PDF()
     pdf.add_page()
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, title, 0, 1)
     pdf.ln(5)
     for i, q in enumerate(questions, 1):
@@ -209,33 +167,21 @@ def create_pdf(questions: List[Dict], title: str, font_path: str) -> bytes:
         pdf.ln(5)
     return pdf.output(dest='S').encode('latin1')
 
-def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
+def create_report_pdf(df_mastery, weak_kps, wrong_df) -> bytes:
     """生成学情报告PDF"""
-    pdf = PDF(font_path)
+    pdf = PDF()
     pdf.add_page()
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 14)
-    else:
-        pdf.set_font('helvetica', '', 14)
+    pdf.set_font("DejaVu", "", 14)
     pdf.cell(0, 10, '学情分析报告', 0, 1, 'C')
     pdf.ln(10)
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, f'生成时间：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 1)
     pdf.ln(5)
 
     # 掌握度表格
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, '各知识点掌握度：', 0, 1)
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 10)
-    else:
-        pdf.set_font('helvetica', '', 10)
+    pdf.set_font("DejaVu", "", 10)
     col_width = pdf.w / 4
     pdf.cell(col_width, 10, '科目', 1)
     pdf.cell(col_width, 10, '单元', 1)
@@ -251,16 +197,10 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
     pdf.ln(10)
 
     # 薄弱知识点
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, '薄弱知识点（掌握度<60%）：', 0, 1)
     if not weak_kps.empty:
-        if font_path and os.path.exists(font_path):
-            pdf.set_font('NotoSans', '', 10)
-        else:
-            pdf.set_font('helvetica', '', 10)
+        pdf.set_font("DejaVu", "", 10)
         for _, row in weak_kps.iterrows():
             pdf.cell(0, 10, f"{row['subject']}-{row['unit']}-{row['name']}: {row['mastery']:.1f}%", 0, 1)
     else:
@@ -268,16 +208,10 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
     pdf.ln(10)
 
     # 错题本（前20条）
-    if font_path and os.path.exists(font_path):
-        pdf.set_font('NotoSans', '', 12)
-    else:
-        pdf.set_font('helvetica', '', 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, '最近错题记录：', 0, 1)
     if not wrong_df.empty:
-        if font_path and os.path.exists(font_path):
-            pdf.set_font('NotoSans', '', 9)
-        else:
-            pdf.set_font('helvetica', '', 9)
+        pdf.set_font("DejaVu", "", 9)
         for i, row in wrong_df.head(20).iterrows():
             pdf.multi_cell(0, 8, f"题目：{row['question_id']}  知识点：{row['kp_name']}  你的答案：{row['user_answer']}  正确答案：{row['correct_answer']}")
             pdf.ln(2)
@@ -341,11 +275,6 @@ def main():
     st.title("📚 AI智能辅助复习系统")
     init_db()
     insert_default_knowledge()
-    
-    # 下载字体（允许失败，不影响其他功能）
-    font_path = download_font()
-    if not font_path:
-        st.warning("中文字体下载失败，PDF导出中文可能显示为空白，但在线练习/学情分析等功能正常。")
 
     # 侧边栏 API Key
     with st.sidebar:
@@ -376,7 +305,6 @@ def main():
                     new_df = pd.read_csv(uploaded_file)
                 else:
                     new_df = pd.read_json(uploaded_file)
-                # 期望列名: subject, unit, name, description
                 if all(col in new_df.columns for col in ['subject','unit','name']):
                     conn = sqlite3.connect('review_system.db')
                     c = conn.cursor()
@@ -435,9 +363,9 @@ def main():
                                 st.write(f"   {opt}")
                         if include_explanation and 'explanation' in q:
                             st.info(f"讲解：{q['explanation']}")
-                    if font_path:
-                        pdf_bytes = create_pdf(questions, f"{subject}_{unit}_练习", font_path)
-                        st.download_button("📥 下载PDF（无答案）", data=pdf_bytes, file_name="exercises.pdf", mime="application/pdf")
+                    # 下载PDF（使用内置字体，无额外依赖）
+                    pdf_bytes = create_pdf(questions, f"{subject}_{unit}_练习")
+                    st.download_button("📥 下载PDF（无答案）", data=pdf_bytes, file_name="exercises.pdf", mime="application/pdf")
                     # 保存空白记录用于纸质批改
                     conn = sqlite3.connect('review_system.db')
                     c = conn.cursor()
@@ -503,13 +431,10 @@ def main():
             if not weak.empty:
                 st.warning("薄弱知识点：")
                 st.dataframe(weak[['subject', 'unit', 'name', 'mastery']])
-            # 导出报告PDF
-            if font_path:
-                wrong_df = get_wrong_questions()
-                report_pdf = create_report_pdf(df, weak, wrong_df, font_path)
-                st.download_button("📄 导出学情报告PDF", data=report_pdf, file_name="learning_report.pdf", mime="application/pdf")
-            else:
-                st.warning("字体未下载，无法导出PDF报告。但您可截图保存当前页面。")
+            # 导出报告PDF（内置DejaVu字体）
+            wrong_df = get_wrong_questions()
+            report_pdf = create_report_pdf(df, weak, wrong_df)
+            st.download_button("📄 导出学情报告PDF", data=report_pdf, file_name="learning_report.pdf", mime="application/pdf")
 
     elif choice == "📓 错题本":
         st.subheader("错题本")
@@ -555,9 +480,8 @@ def main():
                     st.session_state['current_kps'] = all_kps
                     st.session_state['current_type'] = "模拟试卷"
                     st.success("生成成功，请前往「在线练习」作答")
-                    if font_path:
-                        pdf_bytes = create_pdf(questions, f"{subject}_模拟试卷", font_path)
-                        st.download_button("下载试卷PDF", pdf_bytes, "simulation.pdf")
+                    pdf_bytes = create_pdf(questions, f"{subject}_模拟试卷")
+                    st.download_button("下载试卷PDF", pdf_bytes, "simulation.pdf")
                 else:
                     st.error("生成失败")
 
