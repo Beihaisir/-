@@ -39,10 +39,10 @@ def get_font_path():
         st.warning(f"字体下载失败，PDF导出将不可用：{e}")
         return None
 
-# ========== 内置完整知识点（160+条）==========
+# ========== 内置完整知识点（语文56+数学55+英语35=146条）==========
 def get_builtin_knowledge_points():
     points = []
-    # 语文（56条）
+    # 语文 56条
     chinese = [
         ("语文", "六年级上册 第一单元 自然之美", "字词篇", "易错字：渲、参差、缀、妩、薄"),
         ("语文", "六年级上册 第一单元 自然之美", "课文考点《草原》", "背诵第1自然段"),
@@ -103,7 +103,7 @@ def get_builtin_knowledge_points():
     ]
     points.extend(chinese)
 
-    # 数学（55条）
+    # 数学 55条
     math = [
         ("数学", "六年级上册 第一单元 分数乘法", "分数乘整数", "分子相乘"),
         ("数学", "六年级上册 第一单元 分数乘法", "分数乘分数", "分母相乘"),
@@ -163,7 +163,7 @@ def get_builtin_knowledge_points():
     ]
     points.extend(math)
 
-    # 英语（35条）
+    # 英语 35条
     english = [
         ("英语", "六年级上册 Unit 1", "词汇", "learn, practise"),
         ("英语", "六年级上册 Unit 1", "句型", "What did you do?"),
@@ -282,12 +282,10 @@ def generate_explanation(question: Dict, api_key: str) -> str:
     result = call_deepseek(prompt, api_key)
     return result if result else "暂无讲解"
 
-# ========== 评分修复（关键）==========
+# ========== 评分（高准确率）==========
 def normalize_text(text: str) -> str:
-    """将文本标准化：去除标点、空格、括号，转为小写"""
     if not isinstance(text, str):
         text = str(text)
-    # 保留字母、数字、中文
     text = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
     return text.lower().strip()
 
@@ -297,7 +295,6 @@ def grade_question(question: Dict, user_answer: str) -> bool:
     user = str(user_answer).strip()
     
     if q_type == '判断':
-        # 映射各种表示
         true_map = {'正确', '对', '是', 'true', '√', '✔', 't'}
         false_map = {'错误', '错', '否', 'false', '×', 'f'}
         def norm_judge(x):
@@ -310,7 +307,6 @@ def grade_question(question: Dict, user_answer: str) -> bool:
         return norm_judge(correct) == norm_judge(user)
     
     elif q_type == '多选':
-        # 分割答案（支持逗号、空格）
         def split_ans(ans):
             parts = re.split(r'[,，\s]+', ans)
             return set(normalize_text(p) for p in parts if p)
@@ -321,21 +317,16 @@ def grade_question(question: Dict, user_answer: str) -> bool:
         norm_user = normalize_text(user)
         if norm_correct == norm_user:
             return True
-        # 单选特殊情况：用户可能选择了选项文本，而正确答案是字母（如 "A"）
-        # 如果正确答案是单个字母（A、B、C、D），用户答案可能是该字母或对应文本
+        # 处理字母与文本匹配
         if len(norm_correct) == 1 and norm_correct.isalpha():
-            # 获取选项列表
             options = question.get('options', [])
             for idx, opt in enumerate(options):
-                opt_letter = chr(65 + idx)  # A, B, C, D
+                opt_letter = chr(65 + idx)
                 if opt_letter.lower() == norm_correct:
-                    # 检查用户答案是否匹配选项文本
                     if normalize_text(opt) == norm_user:
                         return True
-                    # 检查用户答案是否匹配字母
                     if norm_user == opt_letter.lower():
                         return True
-        # 如果用户答案是单个字母，正确答案是文本，尝试匹配
         if len(norm_user) == 1 and norm_user.isalpha():
             options = question.get('options', [])
             for idx, opt in enumerate(options):
@@ -345,7 +336,7 @@ def grade_question(question: Dict, user_answer: str) -> bool:
                         return True
         return False
 
-# ========== PDF 安全生成 ==========
+# ========== PDF 安全生成（修复 bytes/str 错误）==========
 class PDF(FPDF):
     def __init__(self, font_path):
         super().__init__()
@@ -417,7 +408,11 @@ def create_pdf(questions: List[Dict], title: str, font_path: str):
                 for opt in q['options']:
                     safe_multi_cell(pdf, f"   {opt}")
             pdf.ln(5)
-        return pdf.output(dest='S').encode('latin1')
+        output = pdf.output(dest='S')
+        # 修复：output 已经是 bytes 类型，直接返回
+        if isinstance(output, str):
+            output = output.encode('latin1')
+        return output
     except Exception as e:
         st.error(f"PDF生成失败: {e}")
         return None
@@ -469,7 +464,10 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path):
                 pdf.ln(2)
         else:
             pdf.cell(0, 10, '暂无错题，继续保持！', 0, 1)
-        return pdf.output(dest='S').encode('latin1')
+        output = pdf.output(dest='S')
+        if isinstance(output, str):
+            output = output.encode('latin1')
+        return output
     except Exception as e:
         st.error(f"PDF报告生成失败: {e}")
         return None
