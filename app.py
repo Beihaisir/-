@@ -19,28 +19,32 @@ import numpy as np
 # ========== 配置页面 ==========
 st.set_page_config(page_title="AI智能辅助复习系统", layout="wide")
 
-# ========== 下载中文字体 ==========
+# ========== 下载中文字体（多备用地址）==========
 def download_font():
-    """从GitHub下载NotoSansSC字体到本地fonts目录"""
+    """从多个备用地址下载中文字体，避免单一链接失效"""
     font_dir = "fonts"
     font_path = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
     if not os.path.exists(font_dir):
         os.makedirs(font_dir)
     if not os.path.exists(font_path):
-        with st.spinner("正在下载中文字体，首次使用需要联网..."):
-            # 使用镜像加速（替换为实际可用的URL，这里使用清华镜像）
-            url = "https://mirrors.tuna.tsinghua.edu.cn/github-release/noto-fonts/noto-cjk/Latest/NotoSansSC-Regular.otf"
-            # 改为使用更可靠的源
-            url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf"
-            try:
-                response = requests.get(url, timeout=30)
-                response.raise_for_status()
-                with open(font_path, 'wb') as f:
-                    f.write(response.content)
-                st.success("字体下载完成")
-            except Exception as e:
-                st.error(f"字体下载失败: {e}，PDF中文将显示为空白")
-                return None
+        with st.spinner("首次使用，正在下载中文字体（约20M，请稍等）..."):
+            urls = [
+                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf",
+                "https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf",
+                "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/TTF/SimplifiedChinese/NotoSansSC-Regular.ttf"
+            ]
+            for url in urls:
+                try:
+                    response = requests.get(url, timeout=30)
+                    response.raise_for_status()
+                    with open(font_path, 'wb') as f:
+                        f.write(response.content)
+                    st.success("字体下载完成，PDF可正常显示中文")
+                    return font_path
+                except Exception as e:
+                    continue
+            st.error("所有字体下载链接均失败，PDF中文将显示为空白（其他功能正常）")
+            return None
     return font_path
 
 # ========== 初始化数据库 ==========
@@ -165,23 +169,36 @@ class PDF(FPDF):
     def __init__(self, font_path):
         super().__init__()
         self.font_path = font_path
-        self.add_font('NotoSans', '', font_path, uni=True)
-        self.set_font('NotoSans', '', 12)
+        if font_path and os.path.exists(font_path):
+            self.add_font('NotoSans', '', font_path, uni=True)
+            self.set_font('NotoSans', '', 12)
+        else:
+            # 降级使用内置字体（英文）
+            self.set_font('helvetica', '', 12)
 
     def header(self):
-        self.set_font('NotoSans', '', 12)
+        if hasattr(self, 'font_path') and self.font_path and os.path.exists(self.font_path):
+            self.set_font('NotoSans', '', 12)
+        else:
+            self.set_font('helvetica', '', 12)
         self.cell(0, 10, 'AI智能复习系统 - 练习题', 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('NotoSans', '', 8)
+        if hasattr(self, 'font_path') and self.font_path and os.path.exists(self.font_path):
+            self.set_font('NotoSans', '', 8)
+        else:
+            self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'第 {self.page_no()} 页', 0, 0, 'C')
 
 def create_pdf(questions: List[Dict], title: str, font_path: str) -> bytes:
     pdf = PDF(font_path)
     pdf.add_page()
-    pdf.set_font('NotoSans', '', 12)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 12)
+    else:
+        pdf.set_font('helvetica', '', 12)
     pdf.cell(0, 10, title, 0, 1)
     pdf.ln(5)
     for i, q in enumerate(questions, 1):
@@ -196,18 +213,29 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
     """生成学情报告PDF"""
     pdf = PDF(font_path)
     pdf.add_page()
-    pdf.set_font('NotoSans', '', 14)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 14)
+    else:
+        pdf.set_font('helvetica', '', 14)
     pdf.cell(0, 10, '学情分析报告', 0, 1, 'C')
     pdf.ln(10)
-    pdf.set_font('NotoSans', '', 12)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 12)
+    else:
+        pdf.set_font('helvetica', '', 12)
     pdf.cell(0, 10, f'生成时间：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 1)
     pdf.ln(5)
 
     # 掌握度表格
-    pdf.set_font('NotoSans', '', 12)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 12)
+    else:
+        pdf.set_font('helvetica', '', 12)
     pdf.cell(0, 10, '各知识点掌握度：', 0, 1)
-    pdf.set_font('NotoSans', '', 10)
-    # 简单表格
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 10)
+    else:
+        pdf.set_font('helvetica', '', 10)
     col_width = pdf.w / 4
     pdf.cell(col_width, 10, '科目', 1)
     pdf.cell(col_width, 10, '单元', 1)
@@ -223,10 +251,16 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
     pdf.ln(10)
 
     # 薄弱知识点
-    pdf.set_font('NotoSans', '', 12)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 12)
+    else:
+        pdf.set_font('helvetica', '', 12)
     pdf.cell(0, 10, '薄弱知识点（掌握度<60%）：', 0, 1)
     if not weak_kps.empty:
-        pdf.set_font('NotoSans', '', 10)
+        if font_path and os.path.exists(font_path):
+            pdf.set_font('NotoSans', '', 10)
+        else:
+            pdf.set_font('helvetica', '', 10)
         for _, row in weak_kps.iterrows():
             pdf.cell(0, 10, f"{row['subject']}-{row['unit']}-{row['name']}: {row['mastery']:.1f}%", 0, 1)
     else:
@@ -234,10 +268,16 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path) -> bytes:
     pdf.ln(10)
 
     # 错题本（前20条）
-    pdf.set_font('NotoSans', '', 12)
+    if font_path and os.path.exists(font_path):
+        pdf.set_font('NotoSans', '', 12)
+    else:
+        pdf.set_font('helvetica', '', 12)
     pdf.cell(0, 10, '最近错题记录：', 0, 1)
     if not wrong_df.empty:
-        pdf.set_font('NotoSans', '', 9)
+        if font_path and os.path.exists(font_path):
+            pdf.set_font('NotoSans', '', 9)
+        else:
+            pdf.set_font('helvetica', '', 9)
         for i, row in wrong_df.head(20).iterrows():
             pdf.multi_cell(0, 8, f"题目：{row['question_id']}  知识点：{row['kp_name']}  你的答案：{row['user_answer']}  正确答案：{row['correct_answer']}")
             pdf.ln(2)
@@ -302,10 +342,10 @@ def main():
     init_db()
     insert_default_knowledge()
     
-    # 下载字体
+    # 下载字体（允许失败，不影响其他功能）
     font_path = download_font()
     if not font_path:
-        st.warning("中文字体未安装，PDF导出将使用默认字体（中文可能乱码）。")
+        st.warning("中文字体下载失败，PDF导出中文可能显示为空白，但在线练习/学情分析等功能正常。")
 
     # 侧边栏 API Key
     with st.sidebar:
@@ -468,6 +508,8 @@ def main():
                 wrong_df = get_wrong_questions()
                 report_pdf = create_report_pdf(df, weak, wrong_df, font_path)
                 st.download_button("📄 导出学情报告PDF", data=report_pdf, file_name="learning_report.pdf", mime="application/pdf")
+            else:
+                st.warning("字体未下载，无法导出PDF报告。但您可截图保存当前页面。")
 
     elif choice == "📓 错题本":
         st.subheader("错题本")
