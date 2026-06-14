@@ -39,7 +39,7 @@ def get_font_path():
         st.warning(f"字体下载失败，PDF导出将不可用：{e}")
         return None
 
-# ========== 内置完整知识点（语文56+数学55+英语35=146条）==========
+# ========== 内置完整知识点（146条）==========
 def get_builtin_knowledge_points():
     points = []
     # 语文 56条
@@ -251,7 +251,7 @@ def generate_questions(knowledge_points: List[str], num_questions: int, question
 知识点：{', '.join(knowledge_points)}
 要求：
 - 题型可以是单选、多选、判断、填空。
-- 对于单选和多选，options 数组中填写选项文本，answer 字段必须填写选项的字母（如 "A" 或 "A,C"）。
+- 对于单选和多选，options 数组中填写选项文本，answer 字段填写选项的字母（如 "A" 或 "A,C"）。
 - 对于判断，answer 填写 "正确" 或 "错误"。
 - 对于填空，answer 填写正确答案文本。
 - 返回严格的JSON数组，每个元素格式：
@@ -289,10 +289,15 @@ def normalize_text(text: str) -> str:
     text = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
     return text.lower().strip()
 
-def grade_question(question: Dict, user_answer: str) -> bool:
+def grade_question(question: Dict, user_answer) -> bool:
     q_type = question.get('type', '')
     correct = question.get('answer', '').strip()
-    user = str(user_answer).strip()
+    
+    # 处理 user_answer：可能是字符串或列表（多选）
+    if isinstance(user_answer, list):
+        user = ','.join(user_answer)
+    else:
+        user = str(user_answer).strip()
     
     if q_type == '判断':
         true_map = {'正确', '对', '是', 'true', '√', '✔', 't'}
@@ -307,8 +312,15 @@ def grade_question(question: Dict, user_answer: str) -> bool:
         return norm_judge(correct) == norm_judge(user)
     
     elif q_type == '多选':
+        # 标准化答案集合
         def split_ans(ans):
-            parts = re.split(r'[,，\s]+', ans)
+            # 先按逗号分隔，再按字母拆分（如 "AB" 变成 ["A","B"]）
+            parts = []
+            for part in re.split(r'[,，\s]+', ans):
+                if len(part) > 1 and part.isalpha():
+                    parts.extend(list(part))
+                else:
+                    parts.append(part)
             return set(normalize_text(p) for p in parts if p)
         return split_ans(correct) == split_ans(user)
     
@@ -336,7 +348,7 @@ def grade_question(question: Dict, user_answer: str) -> bool:
                         return True
         return False
 
-# ========== PDF 安全生成（修复 bytes/str 错误）==========
+# ========== PDF 安全生成（修复 bytearray 问题）==========
 class PDF(FPDF):
     def __init__(self, font_path):
         super().__init__()
@@ -409,9 +421,11 @@ def create_pdf(questions: List[Dict], title: str, font_path: str):
                     safe_multi_cell(pdf, f"   {opt}")
             pdf.ln(5)
         output = pdf.output(dest='S')
-        # 修复：output 已经是 bytes 类型，直接返回
+        # 确保返回 bytes
         if isinstance(output, str):
             output = output.encode('latin1')
+        elif isinstance(output, bytearray):
+            output = bytes(output)
         return output
     except Exception as e:
         st.error(f"PDF生成失败: {e}")
@@ -467,6 +481,8 @@ def create_report_pdf(df_mastery, weak_kps, wrong_df, font_path):
         output = pdf.output(dest='S')
         if isinstance(output, str):
             output = output.encode('latin1')
+        elif isinstance(output, bytearray):
+            output = bytes(output)
         return output
     except Exception as e:
         st.error(f"PDF报告生成失败: {e}")
@@ -477,10 +493,17 @@ def save_exercise_record(record_type, title, kp_ids, questions, user_answers, sc
     conn = sqlite3.connect('review_system.db')
     c = conn.cursor()
     now = datetime.datetime.now().isoformat()
+    # 将 user_answers 中的列表转为逗号字符串
+    user_answers_str = []
+    for ans in user_answers:
+        if isinstance(ans, list):
+            user_answers_str.append(','.join(ans))
+        else:
+            user_answers_str.append(str(ans))
     c.execute('''INSERT INTO exercise_records 
                  (user_id, record_type, title, knowledge_points, questions_snapshot, user_answers, score, total_score, start_time, submit_time, is_paper)
                  VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)''',
-              (record_type, title, json.dumps(kp_ids), json.dumps(questions), json.dumps(user_answers), score, total_score, now, now))
+              (record_type, title, json.dumps(kp_ids), json.dumps(questions), json.dumps(user_answers_str), score, total_score, now, now))
     record_id = c.lastrowid
     for i, q in enumerate(questions):
         is_correct = grade_question(q, user_answers[i]) if i < len(user_answers) else False
@@ -491,7 +514,7 @@ def save_exercise_record(record_type, title, kp_ids, questions, user_answers, sc
         c.execute('''INSERT INTO study_records
                      (user_id, question_id, knowledge_point_id, is_correct, user_answer, correct_answer, exercise_record_id, timestamp)
                      VALUES (1, ?, ?, ?, ?, ?, ?, ?)''',
-                  (f"q_{i}", kp_id, is_correct, user_answers[i], q['answer'], record_id, now))
+                  (f"q_{i}", kp_id, is_correct, user_answers_str[i], q['answer'], record_id, now))
     conn.commit()
     conn.close()
     return record_id
@@ -673,8 +696,7 @@ def main():
                 if q['type'] == '单选':
                     answer = st.radio(f"答案 {i+1}", q['options'], key=f"q_{i}")
                 elif q['type'] == '多选':
-                    answer = st.multiselect(f"答案 {i+1}（多选）", q['options'], key=f"q_{i}")
-                    answer = ','.join(answer)
+                    answer = st.multiselect(f"答案 {i+1}（可多选）", q['options'], key=f"q_{i}")
                 elif q['type'] == '判断':
                     answer = st.radio(f"答案 {i+1}", ["正确", "错误"], key=f"q_{i}")
                 else:
